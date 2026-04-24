@@ -1,61 +1,97 @@
-# ACP adapter for Codex
+# Codex ACP GPT-5.5 Adapter
 
-Use [Codex](https://github.com/openai/codex) from [ACP-compatible](https://agentclientprotocol.com) clients such as [Zed](https://zed.dev)!
+This is a Windows-ready fork of [zed-industries/codex-acp](https://github.com/zed-industries/codex-acp) updated to build against OpenAI Codex Rust `rust-v0.124.0`. It was created to make the Codex ACP adapter work cleanly with GPT-5.5 inside Unreal Engine 5.6 through AgentIntegrationKit.
 
-This tool implements an ACP adapter around the Codex CLI, supporting:
+The adapter implements the [Agent Client Protocol](https://agentclientprotocol.com/) around Codex so ACP clients can start Codex sessions, stream responses, request permissions, run tools, and resume history.
 
-- Context @-mentions
-- Images
-- Tool calls (with permission requests)
-- Following
-- Edit review
-- TODO lists
-- Slash commands:
-  - /review (with optional instructions)
-  - /review-branch
-  - /review-commit
-  - /init
-  - /compact
-  - /logout
-  - Custom Prompts
-- Client MCP servers
-- Auth Methods:
-  - ChatGPT subscription (requires paid subscription and doesn't work in remote projects)
-  - CODEX_API_KEY
-  - OPENAI_API_KEY
+## What changed
 
-Learn more about the [Agent Client Protocol](https://agentclientprotocol.com/).
+- Upgraded OpenAI Codex Rust crates from `rust-v0.117.0` to `rust-v0.124.0`.
+- Added the split-out Codex crates now required by newer Codex APIs, including `codex-config`, `codex-models-manager`, and `codex-utils-absolute-path`.
+- Updated authentication, thread management, MCP server configuration, permission prompts, guardian assessments, and event handling for Codex 0.124 protocol changes.
+- Preserved Agent Client Protocol behavior expected by AgentIntegrationKit and ACP-compatible clients.
+- Verified on Windows with Unreal Engine 5.6 / AgentIntegrationKit.
 
-## How to use
+## Release Binary
 
-### Zed
+Download `codex-acp.exe` from the latest GitHub release and place it where your ACP host expects the Codex adapter.
 
-The latest version of Zed can already use this adapter out of the box.
+For AgentIntegrationKit, the user-installed adapter path is usually:
 
-To use Codex, open the Agent Panel and click "New Codex Thread" from the `+` button menu in the top-right.
-
-Read the docs on [External Agent](https://zed.dev/docs/ai/external-agents) support.
-
-### Other clients
-
-Or try it with any of the other [ACP compatible clients](https://agentclientprotocol.com/overview/clients)!
-
-#### Installation
-
-Install the adapter from the latest release for your architecture and OS: https://github.com/zed-industries/codex-acp/releases
-
-You can then use `codex-acp` as a regular ACP agent:
-
-```
-OPENAI_API_KEY=sk-... codex-acp
+```text
+C:\Users\<you>\.agentintegrationkit\agents\codex-acp\<version>\codex-acp.exe
 ```
 
-Or via npm:
+For the Materia project used during testing, the bundled adapter path was:
 
+```text
+A:\NightShiftStudios\Materia\Plugins\AgentIntegrationKit\Source\ThirdParty\Adapters\codex-acp\bin\win32-x64\codex-acp.exe
 ```
-npx @zed-industries/codex-acp
+
+Back up the existing executable before replacing it.
+
+## Usage
+
+Run the adapter directly:
+
+```powershell
+$env:OPENAI_API_KEY = "sk-..."
+.\codex-acp.exe
 ```
+
+Or use a Codex API key:
+
+```powershell
+$env:CODEX_API_KEY = "..."
+.\codex-acp.exe
+```
+
+The adapter also supports ChatGPT subscription auth through the normal Codex login flow when the host environment can open a browser.
+
+## Build From Source
+
+Requirements:
+
+- Rust toolchain from `rust-toolchain.toml`
+- Windows MSVC build tools
+- Network access to fetch Codex Rust crates from GitHub
+
+Build:
+
+```powershell
+cargo build --release
+```
+
+The executable will be written to:
+
+```text
+target\release\codex-acp.exe
+```
+
+## Verification
+
+This fork was checked with:
+
+```powershell
+cargo fmt -- --check
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo build --release
+target\release\codex-acp.exe --help
+```
+
+Current Windows release binary SHA-256:
+
+```text
+8A915033697699F2701E434D37DE63BFF33DB929DD1A7444C7F329E37A15870F
+```
+
+## Known Notes
+
+- Custom prompt listing was removed from the newer Codex protocol path this fork targets, so this adapter currently returns no project custom prompts instead of calling the removed `Op::ListCustomPrompts`.
+- This fork keeps the original ACP surface area focused on AgentIntegrationKit and Windows editor workflows.
+- If OpenAI Codex changes protocol structs again, rerun the verification commands above before publishing a new binary.
 
 ## License
 
-Apache-2.0
+Apache-2.0, matching the upstream adapter.

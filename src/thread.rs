@@ -47,14 +47,14 @@ use codex_protocol::{
         ErrorEvent, Event, EventMsg, ExecApprovalRequestEvent, ExecCommandBeginEvent,
         ExecCommandEndEvent, ExecCommandOutputDeltaEvent, ExecCommandStatus, ExitedReviewModeEvent,
         FileChange, GuardianAssessmentEvent, GuardianAssessmentStatus, ItemCompletedEvent,
-        ItemStartedEvent, McpInvocation, McpStartupCompleteEvent,
-        McpStartupUpdateEvent, McpToolCallBeginEvent, McpToolCallEndEvent, ModelRerouteEvent,
-        NetworkApprovalContext, NetworkPolicyRuleAction, Op, PatchApplyBeginEvent,
-        PatchApplyEndEvent, PatchApplyStatus, ReasoningContentDeltaEvent,
-        ReasoningRawContentDeltaEvent, ReviewDecision, ReviewOutputEvent, ReviewRequest,
-        ReviewTarget, RolloutItem, SandboxPolicy, StreamErrorEvent, TerminalInteractionEvent,
-        TokenCountEvent, TurnAbortedEvent, TurnCompleteEvent, TurnStartedEvent, UserMessageEvent,
-        ViewImageToolCallEvent, WarningEvent, WebSearchBeginEvent, WebSearchEndEvent,
+        ItemStartedEvent, McpInvocation, McpStartupCompleteEvent, McpStartupUpdateEvent,
+        McpToolCallBeginEvent, McpToolCallEndEvent, ModelRerouteEvent, NetworkApprovalContext,
+        NetworkPolicyRuleAction, Op, PatchApplyBeginEvent, PatchApplyEndEvent, PatchApplyStatus,
+        ReasoningContentDeltaEvent, ReasoningRawContentDeltaEvent, ReviewDecision,
+        ReviewOutputEvent, ReviewRequest, ReviewTarget, RolloutItem, SandboxPolicy,
+        StreamErrorEvent, TerminalInteractionEvent, TokenCountEvent, TurnAbortedEvent,
+        TurnCompleteEvent, TurnStartedEvent, UserMessageEvent, ViewImageToolCallEvent,
+        WarningEvent, WebSearchBeginEvent, WebSearchEndEvent,
     },
     request_permissions::{
         PermissionGrantScope, RequestPermissionProfile, RequestPermissionsEvent,
@@ -635,10 +635,7 @@ fn format_mcp_tool_approval_value(value: &serde_json::Value) -> String {
     }
 }
 
-#[expect(clippy::large_enum_variant)]
 enum SubmissionState {
-    /// Loading custom prompts from the project
-    CustomPrompts(CustomPromptsState),
     /// User prompts, including slash commands like /init, /review, /compact, /undo.
     Prompt(PromptState),
 }
@@ -646,14 +643,12 @@ enum SubmissionState {
 impl SubmissionState {
     fn is_active(&self) -> bool {
         match self {
-            Self::CustomPrompts(state) => state.is_active(),
             Self::Prompt(state) => state.is_active(),
         }
     }
 
     async fn handle_event(&mut self, client: &SessionClient, event: EventMsg) {
         match self {
-            Self::CustomPrompts(state) => state.handle_event(event),
             Self::Prompt(state) => state.handle_event(client, event).await,
         }
     }
@@ -665,7 +660,6 @@ impl SubmissionState {
         response: Result<RequestPermissionResponse, Error>,
     ) -> Result<(), Error> {
         match self {
-            Self::CustomPrompts(..) => Ok(()),
             Self::Prompt(state) => {
                 state
                     .handle_permission_request_resolved(client, request_key, response)
@@ -675,9 +669,8 @@ impl SubmissionState {
     }
 
     fn abort_pending_interactions(&mut self) {
-        if let Self::Prompt(state) = self {
-            state.abort_pending_interactions();
-        }
+        let Self::Prompt(state) = self;
+        state.abort_pending_interactions();
     }
 
     fn fail(&mut self, err: Error) {
@@ -686,32 +679,6 @@ impl SubmissionState {
         {
             drop(response_tx.send(Err(err)));
         }
-    }
-}
-
-struct CustomPromptsState {
-    response_tx: Option<oneshot::Sender<Result<Vec<CustomPrompt>, Error>>>,
-}
-
-impl CustomPromptsState {
-    fn new(response_tx: oneshot::Sender<Result<Vec<CustomPrompt>, Error>>) -> Self {
-        Self {
-            response_tx: Some(response_tx),
-        }
-    }
-
-    fn is_active(&self) -> bool {
-        let Some(response_tx) = &self.response_tx else {
-            return false;
-        };
-        !response_tx.is_closed()
-    }
-
-    fn handle_event(&mut self, event: EventMsg) {
-        if let Some(tx) = self.response_tx.take() {
-            drop(tx.send(Ok(Vec::new())));
-        }
-        warn!("Unexpected custom prompt event: {event:?}");
     }
 }
 
@@ -2115,16 +2082,16 @@ impl PromptState {
         if let Some(file_system) = permissions.file_system.as_ref() {
             if let Some((read, write)) = file_system.legacy_read_write_roots() {
                 if let Some(read) = read.as_ref() {
-                content.push(format!(
-                    "File System Read Access: {}",
-                    read.iter().map(|p| p.display()).join(", ")
-                ));
+                    content.push(format!(
+                        "File System Read Access: {}",
+                        read.iter().map(|p| p.display()).join(", ")
+                    ));
                 }
                 if let Some(write) = write.as_ref() {
-                content.push(format!(
-                    "File System Write Access: {}",
-                    write.iter().map(|p| p.display()).join(", ")
-                ));
+                    content.push(format!(
+                        "File System Write Access: {}",
+                        write.iter().map(|p| p.display()).join(", ")
+                    ));
                 }
             } else {
                 content.push(format!(
@@ -3887,9 +3854,7 @@ fn guardian_assessment_tool_call_status(status: &GuardianAssessmentStatus) -> To
         GuardianAssessmentStatus::Approved => ToolCallStatus::Completed,
         GuardianAssessmentStatus::Denied
         | GuardianAssessmentStatus::TimedOut
-        | GuardianAssessmentStatus::Aborted => {
-            ToolCallStatus::Failed
-        }
+        | GuardianAssessmentStatus::Aborted => ToolCallStatus::Failed,
     }
 }
 
@@ -3909,11 +3874,8 @@ fn guardian_assessment_content(event: &GuardianAssessmentEvent) -> Vec<ToolCallC
         lines.push(format!("Action: {summary}"));
     }
 
-    match event.risk_level {
-        Some(level) => {
-            lines.push(format!("Risk: {}", format!("{level:?}").to_lowercase()));
-        }
-        None => {}
+    if let Some(level) = event.risk_level {
+        lines.push(format!("Risk: {}", format!("{level:?}").to_lowercase()));
     }
 
     if let Some(rationale) = event.rationale.as_ref()
@@ -4030,6 +3992,7 @@ mod tests {
     use agent_client_protocol::{RequestPermissionResponse, TextContent};
     use codex_core::{config::ConfigOverrides, test_support::all_model_presets};
     use codex_protocol::config_types::ModeKind;
+    use codex_utils_absolute_path::AbsolutePathBuf;
     use tokio::{
         sync::{Mutex, Notify, mpsc::UnboundedSender},
         task::LocalSet,
@@ -4203,7 +4166,9 @@ mod tests {
                     text: INIT_COMMAND_PROMPT.to_string(),
                     text_elements: vec![]
                 }],
+                environments: None,
                 final_output_json_schema: None,
+                responsesapi_client_metadata: None,
             }],
             "ops don't match {ops:?}"
         );
@@ -4484,7 +4449,9 @@ mod tests {
                     text: "Custom prompt with foo arg.".into(),
                     text_elements: vec![]
                 }],
+                environments: None,
                 final_output_json_schema: None,
+                responsesapi_client_metadata: None,
             }],
             "ops don't match {ops:?}"
         );
@@ -4638,7 +4605,8 @@ mod tests {
                     if prompt == "parallel-exec" {
                         // Emit interleaved exec events: Begin A, Begin B, End A, End B
                         let turn_id = id.to_string();
-                        let cwd = std::env::current_dir().unwrap();
+                        let cwd: AbsolutePathBuf =
+                            std::env::current_dir().unwrap().try_into().unwrap();
                         let send = |msg| {
                             self.op_tx
                                 .send(Event {
@@ -4708,6 +4676,9 @@ mod tests {
                         send(EventMsg::TurnComplete(TurnCompleteEvent {
                             last_agent_message: None,
                             turn_id,
+                            completed_at: None,
+                            duration_ms: None,
+                            time_to_first_token_ms: None,
                         }));
                     } else if prompt == "approval-block" {
                         self.op_tx
@@ -4718,13 +4689,12 @@ mod tests {
                                     approval_id: Some("approval-id".to_string()),
                                     turn_id: id.to_string(),
                                     command: vec!["echo".to_string(), "hi".to_string()],
-                                    cwd: std::env::current_dir().unwrap(),
+                                    cwd: std::env::current_dir().unwrap().try_into().unwrap(),
                                     reason: None,
                                     network_approval_context: None,
                                     proposed_execpolicy_amendment: None,
                                     proposed_network_policy_amendments: None,
                                     additional_permissions: None,
-                                    skill_metadata: None,
                                     available_decisions: Some(vec![
                                         ReviewDecision::Approved,
                                         ReviewDecision::Abort,
@@ -4766,6 +4736,9 @@ mod tests {
                                 msg: EventMsg::TurnComplete(TurnCompleteEvent {
                                     last_agent_message: None,
                                     turn_id: id.to_string(),
+                                    completed_at: None,
+                                    duration_ms: None,
+                                    time_to_first_token_ms: None,
                                 }),
                             })
                             .unwrap();
@@ -4779,6 +4752,7 @@ mod tests {
                                 model_context_window: None,
                                 collaboration_mode_kind: ModeKind::default(),
                                 turn_id: id.to_string(),
+                                started_at: None,
                             }),
                         })
                         .unwrap();
@@ -4798,6 +4772,9 @@ mod tests {
                             msg: EventMsg::TurnComplete(TurnCompleteEvent {
                                 last_agent_message: None,
                                 turn_id: id.to_string(),
+                                completed_at: None,
+                                duration_ms: None,
+                                time_to_first_token_ms: None,
                             }),
                         })
                         .unwrap();
@@ -4830,6 +4807,9 @@ mod tests {
                             msg: EventMsg::TurnComplete(TurnCompleteEvent {
                                 last_agent_message: None,
                                 turn_id: id.to_string(),
+                                completed_at: None,
+                                duration_ms: None,
+                                time_to_first_token_ms: None,
                             }),
                         })
                         .unwrap();
@@ -4863,6 +4843,9 @@ mod tests {
                             msg: EventMsg::TurnComplete(TurnCompleteEvent {
                                 last_agent_message: None,
                                 turn_id: id.to_string(),
+                                completed_at: None,
+                                duration_ms: None,
+                                time_to_first_token_ms: None,
                             }),
                         })
                         .unwrap();
@@ -4880,6 +4863,8 @@ mod tests {
                                 msg: EventMsg::TurnAborted(TurnAbortedEvent {
                                     turn_id: Some(active_prompt_id),
                                     reason: codex_protocol::protocol::TurnAbortReason::Interrupted,
+                                    completed_at: None,
+                                    duration_ms: None,
                                 }),
                             })
                             .unwrap();
@@ -5075,13 +5060,12 @@ mod tests {
                             approval_id: Some("approval-id".to_string()),
                             turn_id: "turn-id".to_string(),
                             command: vec!["echo".to_string(), "hi".to_string()],
-                            cwd: std::env::current_dir()?,
+                            cwd: std::env::current_dir()?.try_into()?,
                             reason: None,
                             network_approval_context: None,
                             proposed_execpolicy_amendment: None,
                             proposed_network_policy_amendments: None,
                             additional_permissions: None,
-                            skill_metadata: None,
                             available_decisions: Some(vec![
                                 ReviewDecision::Approved,
                                 ReviewDecision::Denied,
@@ -5344,13 +5328,12 @@ mod tests {
                             approval_id: Some("approval-id".to_string()),
                             turn_id: "turn-id".to_string(),
                             command: vec!["echo".to_string(), "hi".to_string()],
-                            cwd: std::env::current_dir()?,
+                            cwd: std::env::current_dir()?.try_into()?,
                             reason: None,
                             network_approval_context: None,
                             proposed_execpolicy_amendment: None,
                             proposed_network_policy_amendments: None,
                             additional_permissions: None,
-                            skill_metadata: None,
                             available_decisions: Some(vec![
                                 ReviewDecision::Approved,
                                 ReviewDecision::Abort,

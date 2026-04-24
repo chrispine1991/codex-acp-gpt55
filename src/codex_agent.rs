@@ -17,7 +17,7 @@ use codex_core::{
 };
 use codex_exec_server::{EnvironmentManager, EnvironmentManagerArgs, ExecServerRuntimePaths};
 use codex_login::{
-    AuthManager, CODEX_API_KEY_ENV_VAR, CLIENT_ID, CodexAuth, OPENAI_API_KEY_ENV_VAR,
+    AuthManager, CLIENT_ID, CODEX_API_KEY_ENV_VAR, CodexAuth, OPENAI_API_KEY_ENV_VAR,
     auth::{read_codex_api_key_from_env, read_openai_api_key_from_env},
 };
 use codex_models_manager::collaboration_mode_presets::CollaborationModesConfig;
@@ -66,11 +66,9 @@ impl CodexAgent {
 
         let client_capabilities: Arc<Mutex<ClientCapabilities>> = Arc::default();
         let session_roots: Arc<Mutex<HashMap<SessionId, PathBuf>>> = Arc::default();
-        let runtime_paths = ExecServerRuntimePaths::from_optional_paths(
-            std::env::current_exe().ok(),
-            None,
-        )
-        .expect("current executable path should be available");
+        let runtime_paths =
+            ExecServerRuntimePaths::from_optional_paths(std::env::current_exe().ok(), None)
+                .expect("current executable path should be available");
         let environment_manager =
             EnvironmentManager::new(EnvironmentManagerArgs::from_env(runtime_paths));
         let thread_manager = ThreadManager::new(

@@ -9,6 +9,7 @@ use std::sync::LazyLock;
 #[derive(Debug, Clone)]
 pub struct CustomPrompt {
     pub name: String,
+    #[expect(dead_code)]
     pub path: PathBuf,
     pub content: String,
     pub description: Option<String>,
